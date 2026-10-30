@@ -29,6 +29,18 @@ func toURL(_ text: String) -> URL {
   return URL(string: "https://www.google.com/search?q=" + encode(t))!
 }
 
+func roundedMask(radius r: CGFloat) -> NSImage {
+  let side = r * 2 + 1
+  let img = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+    NSColor.black.setFill()
+    NSBezierPath(roundedRect: rect, xRadius: r, yRadius: r).fill()
+    return true
+  }
+  img.capInsets = NSEdgeInsets(top: r, left: r, bottom: r, right: r)
+  img.resizingMode = .stretch
+  return img
+}
+
 final class Panel: NSPanel {
   override var canBecomeKey: Bool { true }
   override var canBecomeMain: Bool { true }
@@ -83,7 +95,6 @@ final class App: NSObject, NSApplicationDelegate, NSTextFieldDelegate, WKUIDeleg
   var webTop: NSLayoutConstraint!
   let list = NSStackView()
   var webView: WKWebView!
-  var statusItem: NSStatusItem!
   var rows: [Row] = []
   var suggestions: [String] = []
   var sel = -1
@@ -99,7 +110,6 @@ final class App: NSObject, NSApplicationDelegate, NSTextFieldDelegate, WKUIDeleg
   func applicationDidFinishLaunching(_ n: Notification) {
     buildMenu()
     buildPanel()
-    buildStatusItem()
     registerHotKey()
     installKeyMonitor()
     if CommandLine.arguments.contains("--show") { show() }
@@ -109,6 +119,12 @@ final class App: NSObject, NSApplicationDelegate, NSTextFieldDelegate, WKUIDeleg
     if let i = CommandLine.arguments.firstIndex(of: "--screenshots"), i + 1 < CommandLine.arguments.count {
       screenshots(to: CommandLine.arguments[i + 1])
     }
+  }
+
+  // Plus d'icône dans la barre des menus : rouvrir l'app (Spotlight, Finder) affiche la barre
+  func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+    show()
+    return false
   }
 
   // MARK: Construction
@@ -140,16 +156,37 @@ final class App: NSObject, NSApplicationDelegate, NSTextFieldDelegate, WKUIDeleg
     panel.animationBehavior = .none
     panel.minSize = NSSize(width: 380, height: HEADER_H)
 
-    let root = NSVisualEffectView()
-    root.material = .popover
-    root.blendingMode = .behindWindow
-    root.state = .active
+    // Conteneur du contenu, arrondi pour que la page web ne déborde pas dans les coins
+    let root = NSView()
     root.wantsLayer = true
     root.layer?.cornerRadius = 14
     root.layer?.masksToBounds = true
-    root.layer?.borderWidth = 0.5
-    root.layer?.borderColor = NSColor.separatorColor.cgColor
-    panel.contentView = root
+
+    if #available(macOS 26.0, *) {
+      // Liquid Glass, style « clear » pour un maximum de transparence
+      let glass = NSGlassEffectView()
+      glass.style = .clear
+      glass.cornerRadius = 14
+      glass.contentView = root
+      panel.contentView = glass
+    } else {
+      let blur = NSVisualEffectView()
+      blur.material = .hudWindow
+      blur.blendingMode = .behindWindow
+      blur.state = .active
+      // En .behindWindow le flou ignore le cornerRadius du layer : seul un maskImage arrondit
+      // vraiment la fenêtre (sinon coins carrés clairs), et l'ombre suit alors la forme
+      blur.maskImage = roundedMask(radius: 14)
+      root.translatesAutoresizingMaskIntoConstraints = false
+      blur.addSubview(root)
+      NSLayoutConstraint.activate([
+        root.topAnchor.constraint(equalTo: blur.topAnchor),
+        root.bottomAnchor.constraint(equalTo: blur.bottomAnchor),
+        root.leadingAnchor.constraint(equalTo: blur.leadingAnchor),
+        root.trailingAnchor.constraint(equalTo: blur.trailingAnchor),
+      ])
+      panel.contentView = blur
+    }
 
     let icon = NSImageView(image: NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: nil)!)
     icon.symbolConfiguration = .init(pointSize: 15, weight: .semibold)
@@ -276,10 +313,11 @@ final class App: NSObject, NSApplicationDelegate, NSTextFieldDelegate, WKUIDeleg
   }
 
   func buildMenu() {
-    // Menu Édition invisible, nécessaire pour ⌘C / ⌘V / ⌘A dans le champ
+    // Menus invisibles : ⌘Q pour quitter, et ⌘C / ⌘V / ⌘A dans le champ
     let main = NSMenu()
     let appItem = NSMenuItem()
     appItem.submenu = NSMenu()
+    appItem.submenu?.addItem(withTitle: "Quitter Little Browser", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
     main.addItem(appItem)
     let editItem = NSMenuItem()
     let edit = NSMenu(title: "Édition")
@@ -293,19 +331,6 @@ final class App: NSObject, NSApplicationDelegate, NSTextFieldDelegate, WKUIDeleg
     editItem.submenu = edit
     main.addItem(editItem)
     NSApp.mainMenu = main
-  }
-
-  func buildStatusItem() {
-    statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-    statusItem.button?.image = NSImage(systemSymbolName: "safari", accessibilityDescription: "Little Browser")
-    let m = NSMenu()
-    let open = NSMenuItem(title: "Ouvrir Little Browser", action: #selector(menuOpen), keyEquivalent: "n")
-    open.keyEquivalentModifierMask = [.command, .option]
-    open.target = self
-    m.addItem(open)
-    m.addItem(.separator())
-    m.addItem(withTitle: "Quitter Little Browser", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
-    statusItem.menu = m
   }
 
   func registerHotKey() {
@@ -446,8 +471,6 @@ final class App: NSObject, NSApplicationDelegate, NSTextFieldDelegate, WKUIDeleg
       panel.makeKeyAndOrderFront(nil)
     } else { show() }
   }
-
-  @objc func menuOpen() { show() }
 
   func focusField() {
     if expanded { showSearch() }

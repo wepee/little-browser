@@ -55,7 +55,7 @@ URLs work too: `github.com`, `localhost:3000`, `https://…` open directly inste
 - **Live Google suggestions**, keyboard-driven.
 - **Pre-warmed web engine**: the connection to Google is opened while you type, so results show up fast.
 - **Smooth animations** and no white flash in dark mode.
-- **Lives in the menu bar** (compass icon), never in the Dock.
+- **Invisible**: no Dock icon, no menu bar icon. Reopen the app from Spotlight to show the bar, press ⌘Q in it to quit.
 - Works with **AZERTY and QWERTY** keyboards.
 - **One Swift file, zero dependencies.** Read it in ten minutes.
 
@@ -100,7 +100,7 @@ The icon is drawn in code: tweak [`scripts/make-icon.swift`](scripts/make-icon.s
 
 ```
 Sources/main.swift        the whole app
-Resources/Info.plist      bundle metadata (menu-bar app, no Dock icon)
+Resources/Info.plist      bundle metadata (background app, no Dock icon)
 Resources/AppIcon.icns    generated icon
 scripts/make-icon.*       icon generator
 build.sh                  build, sign and optionally install
